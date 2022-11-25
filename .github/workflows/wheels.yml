@@ -1,7 +1,6 @@
 name: Build wheels
 
-on:
-  workflow_dispatch: {}
+on: [push]
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -12,7 +11,7 @@ env:
   # with optional +PTX
   # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "5.0 5.2 5.3 6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
   FORCE_CUDA: 1
   MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
@@ -24,23 +23,23 @@ jobs:
       matrix:
         os:
           - ubuntu-22.04
-          - windows-2019
+          # - windows-2019
         python:
-          - "3.7"
-          - "3.8"
-          - "3.9"
+          # - "3.7"
+          # - "3.8"
+          # - "3.9"
           - "3.10"
         config:
           # torch 1.13 is built with cuda 11.6 and 11.7
-          - torch_version: "1.13.0+cu117"
-            cuda_version: "11.7.0"
-            pip_index: https://download.pytorch.org/whl/cu117
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
+          # - torch_version: "1.13.0+cu117"
+          #   cuda_version: "11.7.0"
+          #   pip_index: https://download.pytorch.org/whl/cu117
+          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
 
-          - torch_version: "1.13.0+cu116"
-            cuda_version: "11.6.2"
-            pip_index: https://download.pytorch.org/whl/cu116
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+          # - torch_version: "1.13.0+cu116"
+          #   cuda_version: "11.6.2"
+          #   pip_index: https://download.pytorch.org/whl/cu116
+          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
           # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
           - torch_version: "1.12.1+cu116"
