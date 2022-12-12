@@ -72,7 +72,8 @@ jobs:
       - if: runner.os == 'Linux'
         name: (Linux) install cuda
         run: >
-          yum install wget git prename -y &&
+          yum makecache &&
+          yum install wget git prename ninja-build -y &&
           wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
           sh ./cuda.run --silent --toolkit
       #### end linux build setup
