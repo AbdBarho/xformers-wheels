@@ -123,7 +123,7 @@ jobs:
 
       - name: Install build dependencies
         run: >
-          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          $PY -m pip install ninja wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
           git config --global --add safe.directory "*"
 
       - name: Build wheel
