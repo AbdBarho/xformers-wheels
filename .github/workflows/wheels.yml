@@ -1,10 +1,10 @@
 name: Build wheels
 
-on:
-  workflow_dispatch: {}
-  schedule:
-    # Run at 3am every monday
-    - cron: '0 3 * * 1'
+on: [push]
+  # workflow_dispatch: {}
+  # schedule:
+  #   # Run at 3am every monday
+  #   - cron: '0 3 * * 1'
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -15,24 +15,24 @@ env:
   # with optional +PTX
   # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "6.0"
   FORCE_CUDA: 1
-  MAX_JOBS: 1 # will crash otherwise
+  # MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
 
 jobs:
   build_wheels:
     strategy:
-      fail-fast: false # don't stop other jobs if one failed
+      fail-fast: false
       matrix:
         os:
           - ubuntu-22.04
           - windows-2019
         python:
-          - "3.7"
-          - "3.8"
-          - "3.9"
+          # - "3.7"
+          # - "3.8"
+          # - "3.9"
           - "3.10"
         config:
           # torch 1.13 is built with cuda 11.6 and 11.7
@@ -42,18 +42,18 @@ jobs:
             pip_index: https://download.pytorch.org/whl/cu117
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
 
-          - torch_version: "1.13.0+cu116"
-            torch_version_constraint: "1.13"
-            cuda_version: "11.6.2"
-            pip_index: https://download.pytorch.org/whl/cu116
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+          # - torch_version: "1.13.0+cu116"
+          #   torch_version_constraint: "1.13"
+          #   cuda_version: "11.6.2"
+          #   pip_index: https://download.pytorch.org/whl/cu116
+          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
-          # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
-          - torch_version: "1.12.1+cu116"
-            torch_version_constraint: "1.12"
-            cuda_version: "11.6.2"
-            pip_index: https://download.pytorch.org/whl/cu116
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+          # # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
+          # - torch_version: "1.12.1+cu116"
+          #   torch_version_constraint: "1.12"
+          #   cuda_version: "11.6.2"
+          #   pip_index: https://download.pytorch.org/whl/cu116
+          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
     runs-on: ${{ matrix.os }}
@@ -127,10 +127,29 @@ jobs:
           git config --global --add safe.directory "*"
 
       - name: Build wheel
-        run: $PY setup.py bdist_wheel -d "dist"
+        env:
+          ARCH_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
+        run: $PY setup.py bdist_wheel -d "dist/" $ARCH_ARG
 
       - uses: actions/upload-artifact@v3
         with:
-          name: xformers-${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.whl
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
-# Note: it might be helpful to have additional steps that test if the built wheels actually work
+
+
+  # TODO: to be able to publish wheels we have to:
+  # change the suffix of linux wheels to manylinux
+  # use a version name compatible with pypi
+  publish:
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+      - run: ls -R
+      - run: python3 -m pip install --upgrade twine
+      - run: |
+          shopt -s globstar
+          python3 -m twine upload --repository testpypi **/*.whl
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
