@@ -118,13 +118,13 @@ jobs:
       - name: Define version
         shell: python3
         run: |
-        from pathlib import Path
-        code_version = Path("version.txt").read_text().strip()
-        assert code_version.endswith("dev")
-        git_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
-        num_commits = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
-        with open("$GITHUB_ENV", "a") as f:
-          f.write(f"\nBUILD_VERSION={code_version}{num_commits}\n")
+          from pathlib import Path
+          code_version = Path("version.txt").read_text().strip()
+          assert code_version.endswith("dev")
+          git_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+          num_commits = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
+          with open("$GITHUB_ENV", "a") as f:
+            f.write(f"\nBUILD_VERSION={code_version}{num_commits}\n")
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
