@@ -1,7 +1,6 @@
 name: Build wheels
 
-on:
-  [push]
+on: [push]
   # workflow_dispatch: {}
   # schedule:
   #   # Run at 3am every monday
@@ -41,20 +40,20 @@ jobs:
             torch_version_constraint: "1.13"
             cuda_version: "11.7.0"
             pip_index: https://download.pytorch.org/whl/cu117
-            container: pytorch/manylinux-builder:cuda11.7
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
 
           - torch_version: "1.13.0+cu116"
             torch_version_constraint: "1.13"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
-            container: pytorch/manylinux-builder:cuda11.6
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
           # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
           - torch_version: "1.12.1+cu116"
             torch_version_constraint: "1.12"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
-            container: pytorch/manylinux-builder:cuda11.6
+            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
     runs-on: ${{ matrix.os }}
@@ -63,12 +62,20 @@ jobs:
       # windows does not have per version binary, it is just 'python3'
       PY: python${{ contains(matrix.os, 'ubuntu') && matrix.python || '3' }}
 
-    container: ${{ contains(matrix.os, 'ubuntu') && matrix.config.container || null }}
+    container: ${{ contains(matrix.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
     timeout-minutes: 360
     defaults:
       run:
         shell: bash
     steps:
+      ##### linux build setup
+      - if: runner.os == 'Linux'
+        name: (Linux) install cuda
+        run: >
+          yum install wget git prename -y &&
+          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
+          sh ./cuda.run --silent --toolkit
+      #### end linux build setup
       ### windows build setup
       - if: runner.os == 'Windows'
         name: (Windows) install cuda
@@ -78,6 +85,12 @@ jobs:
           method: network
 
       - if: runner.os == 'Windows'
+        name: (Windows) install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "${{ matrix.python }}"
+
+      - if: runner.os == 'Windows'
         name: (Windows) setup msvc
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -85,7 +98,7 @@ jobs:
         name: configure Pagefile
         # windows runners will OOM with many CUDA architectures
         # we cheat here with a page file
-        uses: al-cheb/configure-pagefile-action@v1.3
+        uses: al-cheb/configure-pagefile-action@v1.2
         with:
           minimum-size: 8GB
 
@@ -96,16 +109,22 @@ jobs:
       #### end windows build setup
 
       #### now the actual build:
-      - name: Setup python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "${{ matrix.python }}"
-
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
+
+      - name: Define version
+        shell: python3
+        run: |
+        from pathlib import Path
+        code_version = Path("version.txt").read_text().strip()
+        assert code_version.endswith("dev")
+        git_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+        num_commits = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
+        with open("$GITHUB_ENV", "a") as f:
+          f.write(f"\nBUILD_VERSION={code_version}{num_commits}\n")
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
@@ -117,8 +136,7 @@ jobs:
         run: >
           $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
           git config --global --add safe.directory "*"
-      # - name: Setup Version
-      #   run: >
+
       - name: Build wheel
         env:
           PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
@@ -128,6 +146,7 @@ jobs:
         with:
           name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
+
 
   # use a version name compatible with pypi
   publish:
