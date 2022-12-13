@@ -119,20 +119,9 @@ jobs:
 
       - name: Define version
         run: |
-
-          cat <<EOF>ver.py
-          import subprocess
-          from pathlib import Path
-          import os
-
-          code_version = Path("version.txt").read_text().strip()
-          assert code_version.endswith("dev")
-          num_commits = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
-          print(f"{code_version}{num_commits}")
-          EOF
-
-          echo "BUILD_VERSION=`$PY ver.py`" >> ${GITHUB_ENV}
-          rm ver.py
+          read -r version < version.txt
+          num_commits=`git rev-list --count HEAD`
+          echo "BUILD_VERSION=$version$num_commits" >> ${GITHUB_ENV}
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
