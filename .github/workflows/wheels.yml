@@ -1,24 +1,18 @@
 name: Build wheels
 
 on:
-  [push]
-  # workflow_dispatch: {}
-  # schedule:
-  #   # Run at 3am every monday
-  #   - cron: '0 3 * * 1'
+  push:
+    branches:
+      - main
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
 
 env:
-  # all values:
-  # 3.5;3.7;5.0;5.2;5.3;6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6
-  # with optional +PTX
-  # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "6.0"
+  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
   FORCE_CUDA: 1
-  # MAX_JOBS: 1 # will crash otherwise
+  MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
 
@@ -29,11 +23,11 @@ jobs:
       matrix:
         os:
           - ubuntu-22.04
-          # - windows-2019
+          - windows-2019
         python:
-          # - "3.7"
-          # - "3.8"
-          # - "3.9"
+          - "3.7"
+          - "3.8"
+          - "3.9"
           - "3.10"
         config:
           # torch 1.13 is built with cuda 11.6 and 11.7
@@ -131,13 +125,13 @@ jobs:
           echo "torch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
           cat ./requirements.txt
 
-      - name: Install build dependencies
-        run: $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
+      - name: Install dependencies
+        run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
       - name: Build wheel
+        run: $PY setup.py bdist_wheel -d dist/ $PLAT_ARG
         env:
           PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
-        run: $PY setup.py bdist_wheel -d dist/ $PLAT_ARG
 
       - uses: actions/upload-artifact@v3
         with:
@@ -145,10 +139,10 @@ jobs:
           path: dist/*.whl
 
       - name: Upload to PyPi
-        if: matrix.config.torch_version == '1.13.0+cu117' # only latest
+        # publish only latest version, we could move this boolean to the matrix
+        if: matrix.config.torch_version == '1.13.0+cu117'
         run: |
           ls -R dist/
-          $PY -m pip install --upgrade twine
           $PY -m twine upload --repository testpypi dist/*.whl
         env:
           TWINE_USERNAME: __token__
