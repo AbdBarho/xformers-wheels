@@ -63,7 +63,7 @@ jobs:
       # windows does not have per version binary, it is just 'python3'
       PY: python${{ contains(matrix.os, 'ubuntu') && matrix.python || '3' }}
 
-    container: ${{ contains(matrix.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
+    # container: ${{ contains(matrix.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
     timeout-minutes: 360
     defaults:
       run:
@@ -119,9 +119,11 @@ jobs:
 
       - name: Define version
         run: |
+          git config --global --add safe.directory "*"
           read -r version < version.txt
           num_commits=`git rev-list --count HEAD`
           echo "BUILD_VERSION=$version$num_commits" >> ${GITHUB_ENV}
+          cat ${GITHUB_ENV}
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
@@ -130,9 +132,7 @@ jobs:
           cat ./requirements.txt
 
       - name: Install build dependencies
-        run: >
-          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
-          git config --global --add safe.directory "*"
+        run: $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
       - name: Build wheel
         env:
