@@ -96,7 +96,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - if: runner.os == 'Windows'
-        name: configure Pagefile
+        name: (Windows) configure Pagefile
         # windows runners will OOM with many CUDA architectures
         # we cheat here with a page file
         uses: al-cheb/configure-pagefile-action@v1.2
@@ -115,9 +115,11 @@ jobs:
         with:
           submodules: recursive
           path: "."
+          fetch-depth: 0
 
       - name: Define version
         run: |
+
           cat <<EOF>ver.py
           import subprocess
           from pathlib import Path
@@ -128,6 +130,7 @@ jobs:
           num_commits = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
           print(f"{code_version}{num_commits}")
           EOF
+
           echo "BUILD_VERSION=`$PY ver.py`" >> ${GITHUB_ENV}
           rm ver.py
 
