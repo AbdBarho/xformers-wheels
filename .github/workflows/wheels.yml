@@ -70,20 +70,20 @@ jobs:
         shell: bash
     steps:
       ##### linux build setup
-      - if: runner.os == 'Linux'
-        name: (Linux) install cuda
-        run: >
-          yum install wget git prename -y &&
-          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
-          sh ./cuda.run --silent --toolkit
+      # - if: runner.os == 'Linux'
+      #   name: (Linux) install cuda
+      #   run: >
+      #     yum install wget git prename -y &&
+      #     wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
+      #     sh ./cuda.run --silent --toolkit
       #### end linux build setup
       ### windows build setup
-      - if: runner.os == 'Windows'
-        name: (Windows) install cuda
-        uses: okazunori2013/cuda-toolkit@v0.3.2
-        with:
-          cuda: ${{ matrix.config.cuda_version }}
-          method: network
+      # - if: runner.os == 'Windows'
+      #   name: (Windows) install cuda
+      #   uses: okazunori2013/cuda-toolkit@v0.3.2
+      #   with:
+      #     cuda: ${{ matrix.config.cuda_version }}
+      #     method: network
 
       - if: runner.os == 'Windows'
         name: (Windows) install python
@@ -117,7 +117,7 @@ jobs:
           path: "."
 
       - name: Define version
-        shell: python {0}
+        shell: $PY {0}
         run: |
           import subprocess
           from pathlib import Path
