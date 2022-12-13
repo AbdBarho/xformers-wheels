@@ -28,7 +28,7 @@ jobs:
       matrix:
         os:
           - ubuntu-22.04
-          - windows-2019
+          # - windows-2019
         python:
           # - "3.7"
           # - "3.8"
@@ -40,20 +40,21 @@ jobs:
             torch_version_constraint: "1.13"
             cuda_version: "11.7.0"
             pip_index: https://download.pytorch.org/whl/cu117
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
+            container: pytorch/manylinux-builder:cuda11.7
 
-          # - torch_version: "1.13.0+cu116"
-          #   torch_version_constraint: "1.13"
-          #   cuda_version: "11.6.2"
-          #   pip_index: https://download.pytorch.org/whl/cu116
-          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 
-          # # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
-          # - torch_version: "1.12.1+cu116"
-          #   torch_version_constraint: "1.12"
-          #   cuda_version: "11.6.2"
-          #   pip_index: https://download.pytorch.org/whl/cu116
-          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+          - torch_version: "1.13.0+cu116"
+            torch_version_constraint: "1.13"
+            cuda_version: "11.6.2"
+            pip_index: https://download.pytorch.org/whl/cu116
+            container: pytorch/manylinux-builder:cuda11.6
+
+          # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
+          - torch_version: "1.12.1+cu116"
+            torch_version_constraint: "1.12"
+            cuda_version: "11.6.2"
+            pip_index: https://download.pytorch.org/whl/cu116
+            container: pytorch/manylinux-builder:cuda11.6
 
     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
     runs-on: ${{ matrix.os }}
@@ -62,21 +63,12 @@ jobs:
       # windows does not have per version binary, it is just 'python3'
       PY: python${{ contains(matrix.os, 'ubuntu') && matrix.python || '3' }}
 
-    container: ${{ contains(matrix.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
+    container: ${{ contains(matrix.os, 'ubuntu') && '${{ matrix.container }}' || null }}
     timeout-minutes: 360
     defaults:
       run:
         shell: bash
     steps:
-      ##### linux build setup
-      - if: runner.os == 'Linux'
-        name: (Linux) install cuda
-        run: >
-          yum makecache &&
-          yum install wget git prename ninja-build -y &&
-          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
-          sh ./cuda.run --silent --toolkit
-      #### end linux build setup
       ### windows build setup
       - if: runner.os == 'Windows'
         name: (Windows) install cuda
@@ -124,13 +116,14 @@ jobs:
 
       - name: Install build dependencies
         run: >
-          $PY -m pip install ninja wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          $PY -m pip install wheel setuptools -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
           git config --global --add safe.directory "*"
-
+      # - name: Setup Version
+      #   run: >
       - name: Build wheel
         env:
-          ARCH_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
-        run: $PY setup.py bdist_wheel -d "dist/" $ARCH_ARG
+          PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
+        run: $PY setup.py bdist_wheel -d "dist/" $PLAT_ARG
 
       - uses: actions/upload-artifact@v3
         with:
@@ -138,8 +131,6 @@ jobs:
           path: dist/*.whl
 
 
-  # TODO: to be able to publish wheels we have to:
-  # change the suffix of linux wheels to manylinux
   # use a version name compatible with pypi
   publish:
     needs: build_wheels
