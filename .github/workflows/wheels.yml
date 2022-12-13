@@ -117,7 +117,7 @@ jobs:
           path: "."
 
       - name: Define version
-        shell: python3 {0}
+        shell: python {0}
         run: |
           import subprocess
           from pathlib import Path
