@@ -271,7 +271,7 @@ class clean(distutils.command.clean.clean):  # type: ignore
 if __name__ == "__main__":
     write_version_file()
     setuptools.setup(
-        name="xformers",
+        name="formers",
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),

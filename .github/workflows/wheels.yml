@@ -137,24 +137,19 @@ jobs:
       - name: Build wheel
         env:
           PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
-        run: $PY setup.py bdist_wheel -d "dist/" $PLAT_ARG
+        run: $PY setup.py bdist_wheel -d dist/ $PLAT_ARG
 
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
 
-  # use a version name compatible with pypi
-  publish:
-    needs: build_wheels
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v3
-      - run: ls -R
-      - run: python3 -m pip install --upgrade twine
-      - run: |
-          shopt -s globstar
-          python3 -m twine upload --repository testpypi **/*.whl
+      - name: Upload to PyPi
+        if: matrix.config.torch_version == '1.13.0+cu117' # only latest
+        run: |
+          ls -R dist/
+          $PY -m pip install --upgrade twine
+          $PY -m twine upload --repository testpypi dist/*.whl
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
