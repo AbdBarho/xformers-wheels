@@ -1,6 +1,7 @@
 name: Build wheels
 
-on: [push]
+on:
+  [push]
   # workflow_dispatch: {}
   # schedule:
   #   # Run at 3am every monday
@@ -118,11 +119,14 @@ jobs:
       - name: Define version
         shell: python3
         run: |
+          import subprocess
           from pathlib import Path
+
           code_version = Path("version.txt").read_text().strip()
           assert code_version.endswith("dev")
           git_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
           num_commits = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip()
+
           with open("$GITHUB_ENV", "a") as f:
             f.write(f"\nBUILD_VERSION={code_version}{num_commits}\n")
 
@@ -146,7 +150,6 @@ jobs:
         with:
           name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
-
 
   # use a version name compatible with pypi
   publish:
