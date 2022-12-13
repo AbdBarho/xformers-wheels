@@ -1,6 +1,7 @@
 name: Build wheels
 
-on: [push]
+on:
+  [push]
   # workflow_dispatch: {}
   # schedule:
   #   # Run at 3am every monday
@@ -42,7 +43,6 @@ jobs:
             pip_index: https://download.pytorch.org/whl/cu117
             container: pytorch/manylinux-builder:cuda11.7
 
-
           - torch_version: "1.13.0+cu116"
             torch_version_constraint: "1.13"
             cuda_version: "11.6.2"
@@ -78,12 +78,6 @@ jobs:
           method: network
 
       - if: runner.os == 'Windows'
-        name: (Windows) install python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "${{ matrix.python }}"
-
-      - if: runner.os == 'Windows'
         name: (Windows) setup msvc
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -91,7 +85,7 @@ jobs:
         name: configure Pagefile
         # windows runners will OOM with many CUDA architectures
         # we cheat here with a page file
-        uses: al-cheb/configure-pagefile-action@v1.2
+        uses: al-cheb/configure-pagefile-action@v1.3
         with:
           minimum-size: 8GB
 
@@ -102,6 +96,11 @@ jobs:
       #### end windows build setup
 
       #### now the actual build:
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "${{ matrix.python }}"
+
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
@@ -129,7 +128,6 @@ jobs:
         with:
           name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
           path: dist/*.whl
-
 
   # use a version name compatible with pypi
   publish:
