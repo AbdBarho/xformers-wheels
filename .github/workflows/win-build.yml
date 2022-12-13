@@ -1,6 +1,6 @@
 name: win-build
 
-on:
+on: {}
   # pull_request: {}
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
