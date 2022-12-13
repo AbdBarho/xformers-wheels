@@ -63,7 +63,7 @@ jobs:
       # windows does not have per version binary, it is just 'python3'
       PY: python${{ contains(matrix.os, 'ubuntu') && matrix.python || '3' }}
 
-    container: ${{ contains(matrix.os, 'ubuntu') && '${{ matrix.container }}' || null }}
+    container: ${{ contains(matrix.os, 'ubuntu') && ${{ matrix.container }} || null }}
     timeout-minutes: 360
     defaults:
       run:
