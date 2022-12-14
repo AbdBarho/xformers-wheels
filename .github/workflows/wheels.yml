@@ -110,9 +110,7 @@ jobs:
       - name: Cache Build
         uses: actions/cache@v3
         with:
-          path: |
-            build/
-            dist/
+          path: build/temp*
           key: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
 
       - name: Define version
@@ -133,7 +131,7 @@ jobs:
         run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
       - name: Build wheel
-        run: $PY setup.py bdist_wheel -d dist/ $PLAT_ARG
+        run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
         env:
           PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
