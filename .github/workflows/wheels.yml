@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - sdist
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -43,6 +44,10 @@ jobs:
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
             publish: false
+        include:
+          - os: ubuntu-22.04
+            python: "3.10"
+            sdist: true
 
     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
     runs-on: ${{ matrix.os }}
@@ -120,20 +125,30 @@ jobs:
       - name: Install dependencies
         run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
-      - name: Build wheel
-        run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
-        env:
-          PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
+      # - name: Build wheel
+      #   run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
+      #   env:
+      #     PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
-      - uses: actions/upload-artifact@v3
-        with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
-          path: dist/*.whl
+      # - uses: actions/upload-artifact@v3
+      #   with:
+      #     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
+      #     path: dist/*.whl
 
-      - name: Upload to PyPi
-        if: matrix.config.publish
-        run: $PY -m twine upload dist/*.whl
+      # - name: Upload Wheel to PyPi
+      #   if: matrix.config.publish
+      #   run: $PY -m twine upload dist/*.whl
+      #   env:
+      #     TWINE_USERNAME: __token__
+      #     TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Create Source Distribution
+        if: matrix.config.publish && matrix.sdist
+        run: |
+          $PY setup.py sdist -d sdist/ --formats=gztar,zip
+          $PY -m twine upload -r testpypi sdist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
