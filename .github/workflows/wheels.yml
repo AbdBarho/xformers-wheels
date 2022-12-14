@@ -145,7 +145,7 @@ jobs:
       - name: Create Source Distribution
         if: matrix.config.publish && matrix.sdist
         run: |
-          $PY setup.py sdist -d sdist/ --formats=gztar,zip
+          $PY setup.py sdist -d sdist/
           $PY -m twine upload -r testpypi sdist/*
         env:
           TWINE_USERNAME: __token__
