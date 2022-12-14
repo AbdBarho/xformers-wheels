@@ -79,6 +79,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "${{ matrix.python }}"
+          cache: pip
 
       - if: runner.os == 'Windows'
         name: (Windows) setup msvc
@@ -106,6 +107,14 @@ jobs:
           path: "."
           fetch-depth: 0 # for tags
 
+      - name: Cache Build
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/
+            dist/
+          key: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+
       - name: Define version
         run: |
           git config --global --add safe.directory "*"
@@ -130,12 +139,12 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
           path: dist/*.whl
 
       - name: Upload to PyPi
         if: matrix.config.publish
-        run: $PY -m twine upload dist/*.whl
+        run: $PY -m twine upload  -r testpypi dist/*.whl
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
