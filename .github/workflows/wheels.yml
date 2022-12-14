@@ -118,7 +118,6 @@ jobs:
           git config --global --add safe.directory "*"
           echo BUILD_VERSION=`$PY packaging/compute_rc_version.py` >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
-          exit 1
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
