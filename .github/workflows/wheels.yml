@@ -150,6 +150,8 @@ jobs:
         if: matrix.config.publish && matrix.sdist
         run: |
           rm -rf dist/
+          # unpin torch version
+          sed -i 's/^torch.*$/torch/' requirements.txt
           $PY setup.py sdist -d sdist/
           $PY -m twine upload sdist/*
         env:
