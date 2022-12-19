@@ -304,7 +304,7 @@ if __name__ == "__main__":
         "xformers._flash_attn", Path("third_party") / "flash-attention" / "flash_attn"
     )
     setuptools.setup(
-        name="xformers",
+        name="formers",
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),
