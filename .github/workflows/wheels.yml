@@ -12,9 +12,9 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "5.0"
   FORCE_CUDA: 1
-  MAX_JOBS: 1 # will crash otherwise
+  MAX_JOBS: 2 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
@@ -75,7 +75,7 @@ jobs:
       - if: runner.os == 'Linux'
         name: (Linux) install cuda
         run: >
-          yum install wget git prename -y &&
+          yum install wget git prename ninja-build -y &&
           wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
           sh ./cuda.run --silent --toolkit &&
           rm ./cuda.run
@@ -102,7 +102,7 @@ jobs:
           cat ./requirements.txt
 
       - name: Install dependencies
-        run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
+        run: $PY -m pip install ninja wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
       - name: Build wheel
         run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
