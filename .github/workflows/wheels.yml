@@ -1,11 +1,6 @@
 name: Build wheels
 
-on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v?[0-9]+.[0-9]+.[0-9]+"
+on: [push]
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
@@ -26,11 +21,11 @@ jobs:
       matrix:
         os:
           - ubuntu-22.04
-          - windows-2019
+          # - windows-2019
         python:
-          - "3.7"
-          - "3.8"
-          - "3.9"
+          # - "3.7"
+          # - "3.8"
+          # - "3.9"
           - "3.10"
         config:
           - torch_version: "1.13.1+cu117"
@@ -40,12 +35,12 @@ jobs:
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run
             publish: true # publish only latest version
 
-          - torch_version: "1.12.1+cu116"
-            torch_version_constraint: "1.12.1"
-            cuda_version: "11.6.2"
-            pip_index: https://download.pytorch.org/whl/cu116
-            cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
-            publish: false
+          # - torch_version: "1.12.1+cu116"
+          #   torch_version_constraint: "1.12.1"
+          #   cuda_version: "11.6.2"
+          #   pip_index: https://download.pytorch.org/whl/cu116
+          #   cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+          #   publish: false
         include:
           # publish source distribution only from this runner
           - os: ubuntu-22.04
@@ -130,21 +125,21 @@ jobs:
       - name: Install dependencies
         run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
-      - name: Build wheel
-        run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
-        env:
-          PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
+      # - name: Build wheel
+      #   run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
+      #   env:
+      #     PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
-      - uses: actions/upload-artifact@v3
-        with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
-          path: dist/*.whl
+      # - uses: actions/upload-artifact@v3
+      #   with:
+      #     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+      #     path: dist/*.whl
 
-      - name: Upload wheel to PyPi
-        if: matrix.config.publish
-        run: $PY -m twine upload dist/*.whl
-        env:
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      # - name: Upload wheel to PyPi
+      #   if: matrix.config.publish
+      #   run: $PY -m twine upload dist/*.whl
+      #   env:
+      #     TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
       - name: Upload source distribution to PyPi
         if: matrix.config.publish && matrix.sdist
