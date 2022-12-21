@@ -148,7 +148,7 @@ jobs:
           # unpin pytorch version
           git checkout HEAD -- ./requirements.txt
           $PY setup.py sdist -d sdist/
-          $PY -m twine upload sdist/*
+          $PY -m twine upload -r testpypi sdist/*
         env:
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
