@@ -1,3 +1,10 @@
+#include <ATen/ScalarOps.h>
+#include <ATen/Tensor.h>
+#include <ATen/TensorOperators.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <torch/library.h>
+
 #include "kernel_backward.h"
 
 #define DISPATCH_MAXK(func)                                   \
@@ -97,9 +104,11 @@ mem_efficient_attention_backward_cutlass(
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
+  int64_t Mkv = key.size(1);
   int64_t N = key.size(1);
   int64_t nH = query.size(2);
   int64_t K = query.size(3);
+  int64_t Kv = value.size(3);
 
   // It does not make sense to use that in practice,
   // but let's still make sure we are correct
@@ -122,10 +131,13 @@ mem_efficient_attention_backward_cutlass(
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
   } else {
-    grad_q = at::empty_like(query);
-    grad_k = grad_kv_needs_init ? at::zeros_like(key) : at::empty_like(key);
-    grad_v = grad_kv_needs_init ? at::zeros_like(value) : at::empty_like(value);
+    grad_q = at::empty(query.sizes(), query.options());
+    grad_k = grad_kv_needs_init ? at::zeros(key.sizes(), key.options())
+                                : at::empty(key.sizes(), key.options());
+    grad_v = grad_kv_needs_init ? at::zeros(value.sizes(), value.options())
+                                : at::empty(value.sizes(), value.options());
   }
+  at::Tensor workspace;
 
   auto launchKernel = [&](auto _k, int computeCapability) {
     using Kernel = decltype(_k);
@@ -170,6 +182,7 @@ mem_efficient_attention_backward_cutlass(
       p.scale = float(1.0 / std::sqrt(float(p.head_dim)));
     }
 
+    ASSIGN_CHECK_OVERFLOW(p.lse_strideM, logsumexp.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideB, grad_out.stride(0));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideM, grad_out.stride(1));
     ASSIGN_CHECK_OVERFLOW(p.gO_strideH, grad_out.stride(2));
@@ -198,6 +211,12 @@ mem_efficient_attention_backward_cutlass(
     ASSIGN_CHECK_OVERFLOW(p.k_strideH, key.stride(2));
     ASSIGN_CHECK_OVERFLOW(p.v_strideH, value.stride(2));
 
+    int64_t size_bytes = p.workspace_size();
+    if (size_bytes) {
+      workspace =
+          at::empty({size_bytes}, query.options().dtype(at::ScalarType::Byte));
+      p.workspace = (float*)workspace.data_ptr();
+    }
     Kernel::check_supported(p);
 
     constexpr auto kernel_fn = attention_kernel_backward_batched<Kernel>;

@@ -126,6 +126,7 @@ install_repo: &install_repo
 
         # Test import.
         $CONDA_PYTHON -c 'import sys; sys.path = sys.path[1:]; import xformers'
+        $CONDA_PYTHON -m xformers.info
 
 install_experimental_repo: &install_experimental_repo
   - run:
@@ -161,7 +162,7 @@ run_mypy: &run_mypy
        command: |
         source $BASH_ENV
         $CONDA_PYTHON -m mypy --version
-        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|setup.py)" .
+        $CONDA_PYTHON -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|examples|xformers/_flash_attn|setup.py)" .
 
 run_flake8: &run_flake8
   - run:
@@ -182,7 +183,7 @@ run_clang_format: &run_clang_format
         clang-format --version
 
         # apply to our files
-        ./.circleci/run-clang-format.py -r xformers/components/attention/csrc
+        ./.circleci/run-clang-format.py -r xformers/csrc
 
 run_coverage: &run_coverage
   - run:
@@ -303,7 +304,7 @@ commands:
         # Cache the venv directory that contains dependencies
         - restore_cache:
             keys:
-              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+              - cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
         - <<: *setup_conda
         - <<: *install_dep
@@ -317,7 +318,7 @@ commands:
               - ~/miniconda
               - ~/venv
 
-            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum ".circleci/config.yml"}}
+            key: cache-key-gpu-arch<<parameters.arch>>-{{ checksum "requirements-test.txt"}}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml"}}
 
         - <<: *install_repo
         - <<: *run_coverage
@@ -344,7 +345,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
 
@@ -359,7 +360,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-cpu-py38-{{ checksum "requirements-test.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_repo
 
@@ -460,7 +461,7 @@ jobs:
       # Cache the venv directory that contains dependencies
       - restore_cache:
           keys:
-            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
+            - cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *setup_conda
       - <<: *install_dep_exp
@@ -475,7 +476,7 @@ jobs:
             - ~/miniconda
             - ~/venv
 
-          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum ".circleci/config.yml" }}
+          key: cache-key-gpu-exp-114-{{ checksum "experimental/requirements.txt" }}-{{ checksum "requirements-benchmark.txt" }}-{{ checksum ".circleci/config.yml" }}
 
       - <<: *install_experimental_repo
       - <<: *run_experimental_unittests

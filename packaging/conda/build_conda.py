@@ -84,19 +84,19 @@ class Build:
 
         os.environ["TORCH_CUDA_ARCH_LIST"] = "6.0 7.0 7.5 8.0 8.6"
         code_version = (SOURCE_ROOT_DIR / "version.txt").read_text().strip()
-        assert code_version.endswith("dev")
         git_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
         ).strip()
         num_commits = subprocess.check_output(
             ["git", "rev-list", "--count", "HEAD"], text=True
         ).strip()
-        os.environ["BUILD_VERSION"] = f"{code_version}{num_commits}+git.{git_hash}"
+        os.environ["BUILD_VERSION"] = f"{code_version}.dev{num_commits}+git.{git_hash}"
         tag = subprocess.check_output(["git", "describe", "--tags"], text=True).strip()
         os.environ["GIT_TAG"] = tag
         os.environ["PYTORCH_VERSION"] = self.pytorch_version
         os.environ["CU_VERSION"] = self.cuda_version
         os.environ["SOURCE_ROOT_DIR"] = str(SOURCE_ROOT_DIR)
+        os.environ["XFORMERS_BUILD_TYPE"] = "Release"
         cuda_constraint = version_constraint(self.cuda_version)
         pytorch_version_tuple = tuple(int(v) for v in self.pytorch_version.split("."))
         if pytorch_version_tuple < (1, 13):

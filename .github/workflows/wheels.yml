@@ -6,21 +6,19 @@ on: [push]
 # https://github.com/actions/runner/issues/1182
 
 env:
-  # all values:
-  # 3.5;3.7;5.0;5.2;5.3;6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6
-  # with optional +PTX
-  # https://github.com/pytorch/vision/blob/d710f3d1edc06afa244468cb96603ba6dbd4d9d5/packaging/pkg_helpers.bash#L63
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: "5.0 5.2 5.3 6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6"
   FORCE_CUDA: 1
   XFORMERS_BUILD_TYPE: Release
   MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
+  XFORMERS_BUILD_TYPE: "Release"
+  TWINE_USERNAME: __token__
 
 jobs:
   build_wheels:
     strategy:
-      fail-fast: false # don't stop other jobs if one failed
+      fail-fast: false
       matrix:
         os:
           - ubuntu-22.04
@@ -44,9 +42,16 @@ jobs:
 
           # torch 1.12 is built with cuda 11.3 and 11.6, we ignore 11.3 for now
           - torch_version: "1.12.1+cu116"
+            torch_version_constraint: "1.12"
             cuda_version: "11.6.2"
             pip_index: https://download.pytorch.org/whl/cu116
             cuda_run_file: https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
+            publish: false
+        include:
+          # publish source distribution only from this runner
+          - os: ubuntu-22.04
+            python: "3.10"
+            sdist: true
 
     name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
     runs-on: ${{ matrix.os }}
@@ -61,63 +66,67 @@ jobs:
       run:
         shell: bash
     steps:
-      ##### linux build setup
-      - if: runner.os == 'Linux'
-        name: (Linux) install cuda
-        run: >
-          yum install wget git prename -y &&
-          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
-          sh ./cuda.run --silent --toolkit
-      #### end linux build setup
-      ### windows build setup
-      - if: runner.os == 'Windows'
-        name: (Windows) install cuda
-        uses: okazunori2013/cuda-toolkit@v0.3.2
-        with:
-          cuda: ${{ matrix.config.cuda_version }}
-          method: network
-
-      - if: runner.os == 'Windows'
-        name: (Windows) install python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "${{ matrix.python }}"
-
-      - if: runner.os == 'Windows'
-        name: (Windows) setup msvc
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - if: runner.os == 'Windows'
-        name: configure Pagefile
-        # windows runners will OOM with many CUDA architectures
-        # we cheat here with a page file
-        uses: al-cheb/configure-pagefile-action@v1.2
-        with:
-          minimum-size: 8GB
-
-      - if: runner.os == 'Windows'
-        name: (Windows) Remove link.exe
-        # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
-        run: rm /usr/bin/link
-      #### end windows build setup
-
-      #### now the actual build:
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
+          fetch-depth: 0 # for tags
 
-      - name: Install build dependencies
+      - if: runner.os == 'Linux'
+        name: (Linux) install cuda
         run: >
-          $PY -m pip install wheel setuptools torch==${{ matrix.config.torch_version }} -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }} &&
+          yum install wget git prename -y &&
+          wget -q "${{ matrix.config.cuda_run_file }}" -O cuda.run &&
+          sh ./cuda.run --silent --toolkit &&
+          rm ./cuda.run
+
+      - if: runner.os == 'Windows'
+        name: (Windows) Setup Runner
+        uses: ./.github/actions/setup-windows-runner
+        with:
+          cuda: ${{ matrix.config.cuda_version }}
+          python: ${{ matrix.python }}
+
+      - name: Define version
+        run: |
+          set -Eeuo pipefail
           git config --global --add safe.directory "*"
+          version=`$PY packaging/compute_wheel_version.py`
+          echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
+          cat ${GITHUB_ENV}
+
+      - name: Setup proper pytorch dependency in "requirements.txt"
+        run: |
+          sed -i '/torch/d' ./requirements.txt
+          echo "torch == ${{ matrix.config.torch_version_constraint }}" >> ./requirements.txt
+          cat ./requirements.txt
+
+      - name: Install dependencies
+        run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url ${{ matrix.config.pip_index }}
 
       - name: Build wheel
-        run: $PY setup.py bdist_wheel -d "dist/torch${{ matrix.config.torch_version }}"
+        run: $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
+        env:
+          PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}
-          path: dist
+          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}.zip
+          path: dist/*.whl
+
+      - name: Upload wheel to PyPi
+        if: matrix.config.publish
+        run: $PY -m twine upload dist/*.whl
+        env:
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Upload source distribution to PyPi
+        if: matrix.config.publish && matrix.sdist
+        run: |
+          rm -rf dist/
+          $PY setup.py sdist -d sdist/
+          $PY -m twine upload sdist/*
+        env:
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 # Note: it might be helpful to have additional steps that test if the built wheels actually work

@@ -28,6 +28,16 @@ from torch.utils.cpp_extension import (
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
 
+def get_extra_nvcc_flags_for_build_type() -> List[str]:
+    build_type = os.environ.get("XFORMERS_BUILD_TYPE", "RelWithDebInfo").lower()
+    if build_type == "relwithdebinfo":
+        return ["--generate-line-info"]
+    elif build_type == "release":
+        return []
+    else:
+        raise ValueError(f"Unknown build type: {build_type}")
+
+
 def fetch_requirements():
     with open("requirements.txt") as f:
         reqs = f.read().strip().split("\n")
@@ -60,6 +70,27 @@ def write_version_file():
         tag = os.getenv("GIT_TAG")
         if tag is not None:
             f.write(f'git_tag = "{tag}"\n')
+
+
+def symlink_package(name: str, path: Path) -> None:
+    cwd = Path(__file__).parent
+    path_from = cwd / path
+    path_to = os.path.join(cwd, *name.split("."))
+
+    # OSError: [WinError 1314] A required privilege is not held by the client
+    # Windows requires special permission to symlink. Fallback to copy
+    use_symlink = os.name != "nt"
+    try:
+        if use_symlink:
+            os.remove(path_to)
+        else:
+            shutil.rmtree(path_to)
+    except FileNotFoundError:
+        pass
+    if use_symlink:
+        os.symlink(src=path_from, dst=path_to)
+    else:
+        shutil.copytree(src=path_from, dst=path_to)
 
 
 def get_cuda_version(cuda_dir) -> int:
@@ -122,8 +153,12 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                 os.path.join(this_dir, "third_party", "flash-attention", path)
                 for path in [
                     "csrc/flash_attn/fmha_api.cpp",
-                    "csrc/flash_attn/src/fmha_fprop_fp16_kernel.sm80.cu",
-                    "csrc/flash_attn/src/fmha_dgrad_fp16_kernel_loop.sm80.cu",
+                    "csrc/flash_attn/src/fmha_fwd_hdim32.cu",
+                    "csrc/flash_attn/src/fmha_fwd_hdim64.cu",
+                    "csrc/flash_attn/src/fmha_fwd_hdim128.cu",
+                    "csrc/flash_attn/src/fmha_bwd_hdim32.cu",
+                    "csrc/flash_attn/src/fmha_bwd_hdim64.cu",
+                    "csrc/flash_attn/src/fmha_bwd_hdim128.cu",
                     "csrc/flash_attn/src/fmha_block_fprop_fp16_kernel.sm80.cu",
                     "csrc/flash_attn/src/fmha_block_dgrad_fp16_kernel_loop.sm80.cu",
                 ]
@@ -137,10 +172,10 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                     "--expt-extended-lambda",
                     "--use_fast_math",
                     "--ptxas-options=-v",
-                    "-lineinfo",
                 ]
                 + nvcc_platform_dependant_args
-                + nvcc_archs_flags,
+                + nvcc_archs_flags
+                + get_extra_nvcc_flags_for_build_type(),
             },
             include_dirs=[
                 Path(flash_root) / "csrc" / "flash_attn",
@@ -154,17 +189,10 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
 def get_extensions():
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir = os.path.join(this_dir, "xformers", "components")
+    extensions_dir = os.path.join(this_dir, "xformers", "csrc")
 
-    main_file = glob.glob(os.path.join(extensions_dir, "*.cpp"))
-
-    source_cpu = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
-
-    sources = main_file + source_cpu
-
-    source_cuda = glob.glob(
-        os.path.join(extensions_dir, "**", "cuda", "**", "*.cu"), recursive=True
-    )
+    sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
+    source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
@@ -190,20 +218,21 @@ def get_extensions():
     include_dirs = [extensions_dir]
     ext_modules = []
 
-    if (torch.cuda.is_available() and ((CUDA_HOME is not None))) or os.getenv(
-        "FORCE_CUDA", "0"
-    ) == "1":
+    if (
+        (torch.cuda.is_available() and ((CUDA_HOME is not None)))
+        or os.getenv("FORCE_CUDA", "0") == "1"
+        or os.getenv("TORCH_CUDA_ARCH_LIST", "") != ""
+    ):
         extension = CUDAExtension
         sources += source_cuda
         include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
         nvcc_flags = [
             "-DHAS_PYTORCH",
             "--use_fast_math",
-            "--generate-line-info",
             "-U__CUDA_NO_HALF_OPERATORS__",
             "-U__CUDA_NO_HALF_CONVERSIONS__",
             "--extended-lambda",
-        ]
+        ] + get_extra_nvcc_flags_for_build_type()
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
         nvcc_flags += shlex.split(os.getenv("NVCC_FLAGS", ""))
@@ -261,19 +290,29 @@ class clean(distutils.command.clean.clean):  # type: ignore
 
 if __name__ == "__main__":
     write_version_file()
+    # Embed a fixed version of flash_attn
+    # NOTE: The correct way to do this would be to use the `package_dir`
+    # parameter in `setuptools.setup`, but this does not work when
+    # developing in editable mode
+    # See: https://github.com/pypa/pip/issues/3160 (closed, but not fixed)
+    symlink_package(
+        "xformers._flash_attn", Path("third_party") / "flash-attention" / "flash_attn"
+    )
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),
-        packages=setuptools.find_packages(exclude=("tests", "tests.*")),
+        packages=setuptools.find_packages(
+            exclude=("tests*", "benchmarks*", "experimental*")
+        ),
         ext_modules=get_extensions(),
         cmdclass={
             "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
             "clean": clean,
         },
         url="https://facebookresearch.github.io/xformers/",
-        python_requires=">=3.6",
+        python_requires=">=3.7",
         author="Facebook AI Research",
         author_email="oncall+xformers@xmail.facebook.com",
         long_description="XFormers: A collection of composable Transformer building blocks."
@@ -284,6 +323,7 @@ if __name__ == "__main__":
             "Programming Language :: Python :: 3.7",
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
+            "Programming Language :: Python :: 3.10",
             "License :: OSI Approved :: BSD License",
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
             "Operating System :: OS Independent",

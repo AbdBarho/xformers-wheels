@@ -5,7 +5,7 @@
 
 import torch
 
-from .memory_efficient_attention import (
+from .fmha import (
     AttentionMask,
     AttentionOp,
     AttentionOpBase,
@@ -15,7 +15,12 @@ from .memory_efficient_attention import (
     MemoryEfficientAttentionCutlassOp,
     MemoryEfficientAttentionFlashAttentionOp,
     MemoryEfficientAttentionOp,
+    MemoryEfficientAttentionTritonFwdFlashBwOp,
+    TritonFlashAttentionOp,
     memory_efficient_attention,
+    memory_efficient_attention_backward,
+    memory_efficient_attention_forward,
+    memory_efficient_attention_forward_requires_grad,
 )
 from .swiglu_op import (
     SwiGLU,
@@ -61,7 +66,11 @@ __all__ = [
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
     "MemoryEfficientAttentionOp",
+    "MemoryEfficientAttentionTritonFwdFlashBwOp",
     "memory_efficient_attention",
+    "memory_efficient_attention_backward",
+    "memory_efficient_attention_forward",
+    "memory_efficient_attention_forward_requires_grad",
     "SwiGLU",
     "SwiGLUEagerOp",
     "SwiGLUFusedOp",
@@ -69,6 +78,7 @@ __all__ = [
     "SwiGLUOpDispatch",
     "SwiGLUPackedFusedOp",
     "swiglu",
+    "TritonFlashAttentionOp",
     "unbind",
     "stack_or_none",
     "get_stack_strides",
