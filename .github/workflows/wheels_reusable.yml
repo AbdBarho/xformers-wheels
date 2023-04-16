@@ -59,7 +59,7 @@ jobs:
       PY: python${{ contains(inputs.os, 'ubuntu') && inputs.python || '3' }}
 
     container: ${{ contains(inputs.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
-    timeout-minutes: 360
+    timeout-minutes: 720
     defaults:
       run:
         shell: bash
