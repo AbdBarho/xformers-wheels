@@ -47,7 +47,6 @@ efficient_attention_forward_cutlass(
     bool compute_logsumexp,
     int64_t custom_mask_type,
     c10::optional<double> scale,
-    const c10::optional<at::Tensor>& causal_diagonal,
     const c10::optional<at::Tensor>& seqlen_k) {
 #ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
   TORCH_CHECK(
@@ -206,12 +205,6 @@ efficient_attention_forward_cutlass(
     p.num_keys = max_seqlen_k;
     p.num_batches = seqstart_q.has_value() ? seqstart_q->size(0) - 1 : B;
     p.custom_mask_type = custom_mask_type;
-    p.causal_diagonal_ptr = nullptr;
-    if (causal_diagonal.has_value()) {
-      CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(causal_diagonal.value());
-      TORCH_CHECK(causal_diagonal->scalar_type() == at::ScalarType::Int);
-      p.causal_diagonal_ptr = (int32_t*)causal_diagonal->data_ptr();
-    }
 
     p.seqlen_k_ptr = nullptr;
     if (seqlen_k.has_value()) {
@@ -244,13 +237,25 @@ efficient_attention_forward_cutlass(
           "invalid dtype for bias - should match query's dtype");
       p.attn_bias_ptr = (scalar_t*)bias->data_ptr();
 
-      // assign strides for bias, viewed as
-      // (batch_sz, n_heads, n_queries, n_keys)
-      const at::Tensor bias_4d_view =
-          get_bias_4d_view(*bias, B, num_heads, M, N);
-      ASSIGN_CHECK_OVERFLOW(p.bias_strideB, bias_4d_view.stride(0));
-      ASSIGN_CHECK_OVERFLOW(p.bias_strideH, bias_4d_view.stride(1));
-      ASSIGN_CHECK_OVERFLOW(p.bias_strideM, bias_4d_view.stride(2));
+      TORCH_CHECK(bias->dim() == 4, "Bias expected in BMHK format");
+      TORCH_CHECK(
+          bias->size(0) == query.size(0),
+          "attn_bias: wrong shape (batch dimension)");
+      TORCH_CHECK(
+          bias->size(1) == query.size(2),
+          "attn_bias: wrong shape (head dimension)");
+      TORCH_CHECK(
+          bias->size(2) == query.size(1),
+          "attn_bias: wrong shape (seqlenQ dimension)");
+      TORCH_CHECK(
+          bias->size(3) == key.size(1),
+          "attn_bias: wrong shape (seqlenKV dimension)");
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideB, bias->stride(0));
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideH, bias->stride(1));
+      ASSIGN_CHECK_OVERFLOW(p.bias_strideM, bias->stride(2));
+      TORCH_CHECK(
+          bias->stride(3) == 1,
+          "attn_bias: wrong alignment (last dimension must be contiguous)");
     }
 
     p.use_dropout = use_dropout;

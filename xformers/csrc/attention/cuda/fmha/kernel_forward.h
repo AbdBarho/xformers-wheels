@@ -69,6 +69,24 @@ static CUTLASS_DEVICE float atomicMaxFloat(float* addr, float value) {
 }
 } // namespace
 
+// If ToBatchHookType_ is supplied other than this default (which is
+// never the case in the xformers library) then the user is
+// defining the logic which each block uses to find its data to work on,
+// with the advance_to_batch function with the following signature.
+// It should return false if there is no work to do for this block.
+// In general this will not work with saving for backward due to fixed layout
+// for logsumexp and incompatible rngs for dropout, so is likely only useful for
+// custom inference.
+struct DefaultToBatchHook {
+  template <typename Params>
+  CUTLASS_DEVICE static bool advance_to_batch(
+      Params&,
+      int64_t& /* q_start */,
+      int64_t& /* k_start */) {
+    return true;
+  }
+};
+
 template <
     // The datatype of Q/K/V
     typename scalar_t_,
@@ -83,7 +101,8 @@ template <
     // This is quite slower on V100 for some reason
     // Set to false if you know at compile-time you will never need dropout
     bool kSupportsDropout_ = true,
-    bool kSupportsBias_ = true>
+    bool kSupportsBias_ = true,
+    typename ToBatchHookType_ = DefaultToBatchHook>
 struct AttentionKernel {
   enum CustomMaskType {
     NoCustomMask = 0,
@@ -135,7 +154,6 @@ struct AttentionKernel {
     int32_t* seqstart_q_ptr = nullptr;
     int32_t* seqstart_k_ptr = nullptr;
 
-    int32_t* causal_diagonal_ptr = nullptr;
     int32_t* seqlen_k_ptr = nullptr;
     uint32_t causal_diagonal_offset = 0;
 
@@ -147,45 +165,45 @@ struct AttentionKernel {
     lse_scalar_t* logsumexp_ptr = nullptr;
 
     // Scale
-    accum_t scale;
+    accum_t scale = 0.0;
 
     // Dimensions/strides
-    int32_t head_dim;
-    int32_t head_dim_value;
-    int32_t num_queries;
-    int32_t num_keys;
-    int32_t num_keys_absolute;
+    int32_t head_dim = 0;
+    int32_t head_dim_value = 0;
+    int32_t num_queries = 0;
+    int32_t num_keys = 0;
+    int32_t num_keys_absolute = 0;
 
     uint8_t custom_mask_type = NoCustomMask;
 
-    int32_t q_strideM;
-    int32_t k_strideM;
-    int32_t v_strideM;
+    int32_t q_strideM = 0;
+    int32_t k_strideM = 0;
+    int32_t v_strideM = 0;
     int32_t bias_strideM = 0;
 
     int32_t o_strideM = 0;
 
     // Everything below is only used in `advance_to_block`
     // and shouldn't use registers
-    int32_t q_strideH;
-    int32_t k_strideH;
-    int32_t v_strideH;
-    int32_t bias_strideH = 0;
+    int32_t q_strideH = 0;
+    int32_t k_strideH = 0;
+    int32_t v_strideH = 0;
+    int64_t bias_strideH = 0;
 
-    int64_t q_strideB;
-    int64_t k_strideB;
-    int64_t v_strideB;
-    int32_t bias_strideB = 0;
+    int64_t q_strideB = 0;
+    int64_t k_strideB = 0;
+    int64_t v_strideB = 0;
+    int64_t bias_strideB = 0;
 
-    int32_t num_batches;
-    int32_t num_heads;
+    int32_t num_batches = 0;
+    int32_t num_heads = 0;
 
     // dropout
-    bool use_dropout;
-    unsigned long long dropout_batch_head_rng_offset;
-    float dropout_prob;
+    bool use_dropout = false;
+    unsigned long long dropout_batch_head_rng_offset = 0;
+    float dropout_prob = 0.0f;
 #ifdef HAS_PYTORCH
-    at::PhiloxCudaState rng_engine_inputs;
+    at::PhiloxCudaState rng_engine_inputs = at::PhiloxCudaState(0, 0);
 #endif
 
     // Moves pointers to what we should process
@@ -203,9 +221,17 @@ struct AttentionKernel {
             head_id * num_queries * num_keys;
       }
 
-      int64_t q_start, k_start;
+      int64_t q_start = 0, k_start = 0;
       // Advance to current batch - in case of different sequence lengths
-      if (seqstart_q_ptr != nullptr) {
+      constexpr bool kUseToBatchHook =
+          !cutlass::platform::is_same<ToBatchHookType_, DefaultToBatchHook>::
+              value;
+      if (kUseToBatchHook) {
+        // Call out to a custom implementation.
+        if (!ToBatchHookType_::advance_to_batch(*this, q_start, k_start)) {
+          return false;
+        }
+      } else if (seqstart_q_ptr != nullptr) {
         assert(seqstart_k_ptr != nullptr);
         seqstart_q_ptr += batch_id;
 
@@ -268,11 +294,8 @@ struct AttentionKernel {
       }
 
       // Custom masking
-      if (causal_diagonal_ptr) {
-        causal_diagonal_offset = causal_diagonal_ptr[batch_id];
-      }
       if (custom_mask_type == CausalFromBottomRight) {
-        causal_diagonal_offset += num_keys - num_queries;
+        causal_diagonal_offset = num_keys - num_queries;
       }
       // We use num_keys_absolute to index into the rng_state
       // We need this index to match between forward and backwards
@@ -309,6 +332,7 @@ struct AttentionKernel {
 
       // Make sure the compiler knows these variables are the same on all
       // the threads of the warp.
+      // Only worth doing if they could have been modified above.
       query_ptr = warp_uniform(query_ptr);
       key_ptr = warp_uniform(key_ptr);
       value_ptr = warp_uniform(value_ptr);
@@ -321,8 +345,6 @@ struct AttentionKernel {
       num_queries = warp_uniform(num_queries);
       num_keys = warp_uniform(num_keys);
       num_heads = warp_uniform(num_heads);
-      head_dim = warp_uniform(head_dim);
-      head_dim_value = warp_uniform(head_dim_value);
       o_strideM = warp_uniform(o_strideM);
       custom_mask_type = warp_uniform(custom_mask_type);
       return true;
@@ -578,8 +600,8 @@ struct AttentionKernel {
           p.num_heads <= 1 || p.bias_strideH % kAlignmentQ == 0,
           "attn_bias is not correctly aligned (strideH)");
       XFORMERS_CHECK(
-          p.bias_strideM % kAlignmentQ == 0,
-          "attn_bias is not correctly aligned");
+          p.num_queries <= 1 || p.bias_strideM % kAlignmentQ == 0,
+          "attn_bias is not correctly aligned (strideM)");
     }
     XFORMERS_CHECK(
         p.q_strideM % kAlignmentQ == 0,
@@ -599,9 +621,6 @@ struct AttentionKernel {
     XFORMERS_CHECK(
         p.num_heads <= 1 || p.v_strideH % kAlignmentV == 0,
         "value is not correctly aligned (strideH)");
-    XFORMERS_CHECK(
-        p.causal_diagonal_ptr == nullptr || p.custom_mask_type != NoCustomMask,
-        "`causal_diagonal_ptr` is only useful when `custom_mask_type` is causal");
     XFORMERS_CHECK(
         p.custom_mask_type < NumCustomMaskTypes,
         "invalid value for `custom_mask_type`");
@@ -760,6 +779,8 @@ struct AttentionKernel {
 
       if (kPreloadV) {
         prologueV(0);
+      } else {
+        MM1::Mma::drain_cp_asyncs();
       }
 
       typename MM0::Mma::Operator::IteratorC::TensorCoord
@@ -978,6 +999,7 @@ struct AttentionKernel {
         }
 
         if (!kKeepOutputInRF) {
+          MM1::Mma::drain_cp_asyncs();
           DISPATCH_BOOL(
               iter_key_start == 0, kIsFirst, ([&] {
                 DISPATCH_BOOL(
@@ -1084,6 +1106,7 @@ struct AttentionKernel {
           thread_id(),
           warp_id(),
           lane_id());
+      MM1::Mma::drain_cp_asyncs();
       epilogue(rescale, dest_iter, accum_o);
     }
 
